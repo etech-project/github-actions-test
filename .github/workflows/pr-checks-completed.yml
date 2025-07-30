@@ -1,0 +1,112 @@
+name: PR Checks Completed
+
+on:
+  check_suite:
+    types: [completed] 
+
+jobs:
+  pr-checks-completed:
+    name: Handle PR Checks Completion
+    runs-on: ubuntu-latest
+    
+    # Only run for PRs (check_suite events can also be triggered by direct pushes)
+    if: github.event.check_suite.pull_requests != null
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Get PR information
+        id: pr-info
+        env:
+          PR_DATA: ${{ toJson(github.event.check_suite.pull_requests) }}
+        run: |
+          # Extract first PR number from the JSON array
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found in check_suite event"
+            exit 1
+          fi
+          
+          PR_HEAD_SHA="${{ github.event.check_suite.head_sha }}"
+          PR_CONCLUSION="${{ github.event.check_suite.conclusion }}"
+          
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head_sha=$PR_HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "conclusion=$PR_CONCLUSION" >> $GITHUB_OUTPUT
+          
+          echo "PR #$PR_NUMBER check suite completed with conclusion: $PR_CONCLUSION"
+          echo "Head SHA: $PR_HEAD_SHA"
+      
+      - name: Handle successful checks
+        if: github.event.check_suite.conclusion == 'success'
+        run: |
+          echo "All checks passed for PR #${{ steps.pr-info.outputs.pr_number }}"
+          echo "PR is ready for review/merge!"
+          
+          # Add your custom logic here for successful checks
+          # Examples:
+          # - Send notifications
+          # - Auto-assign reviewers
+          # - Trigger deployments to staging
+          # - Update project boards
+      
+      - name: Handle failed checks
+        if: github.event.check_suite.conclusion == 'failure'
+        run: |
+          echo "Some checks failed for PR #${{ steps.pr-info.outputs.pr_number }}"
+          echo "PR needs attention before it can be merged."
+          
+          # Add your custom logic here for failed checks
+          # Examples:
+          # - Send failure notifications
+          # - Comment on PR with failure summary
+          # - Update labels
+          # - Notify relevant teams
+      
+      - name: Handle cancelled/skipped checks
+        if: github.event.check_suite.conclusion == 'cancelled' || github.event.check_suite.conclusion == 'skipped'
+        run: |
+          echo "Checks were cancelled or skipped for PR #${{ steps.pr-info.outputs.pr_number }}"
+          echo "Conclusion: ${{ github.event.check_suite.conclusion }}"
+      
+      - name: Handle neutral/timed out checks
+        if: github.event.check_suite.conclusion == 'neutral' || github.event.check_suite.conclusion == 'timed_out'
+        run: |
+          echo "Checks completed with neutral/timeout status for PR #${{ steps.pr-info.outputs.pr_number }}"
+          echo "Conclusion: ${{ github.event.check_suite.conclusion }}"
+      
+    #   # Example: Comment on PR with check results
+    #   - name: Comment on PR
+    #     if: always()
+    #     uses: actions/github-script@v7
+    #     with:
+    #       script: |
+    #         const conclusion = '${{ github.event.check_suite.conclusion }}';
+    #         const prNumber = ${{ steps.pr-info.outputs.pr_number }};
+            
+    #         const statusEmoji = {
+    #           'success': '✅',
+    #           'failure': '❌',
+    #           'cancelled': '⚠️',
+    #           'skipped': '⚠️',
+    #           'neutral': '⏸️',
+    #           'timed_out': '⏱️'
+    #         };
+            
+    #         const emoji = statusEmoji[conclusion] || '❓';
+            
+    #         const body = `${emoji} **Check Suite Completed**
+            
+    #         - **Status**: ${conclusion}
+    #         - **Commit**: ${context.payload.check_suite.head_sha.substring(0, 7)}
+    #         - **Check Suite ID**: ${context.payload.check_suite.id}
+            
+    #         _This comment was automatically generated when all checks finished running._`;
+            
+    #         github.rest.issues.createComment({
+    #           issue_number: prNumber,
+    #           owner: context.repo.owner,
+    #           repo: context.repo.repo,
+    #           body: body
+    #         });
